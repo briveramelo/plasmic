@@ -1,30 +1,57 @@
 version: "3.8"
 
 services:
+  # 1) Postgres
   db:
     image: postgres:15
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: plasmic
+      POSTGRES_USER: wab
       POSTGRES_PASSWORD: securepassword
-      POSTGRES_DB: plasmicdb
+      POSTGRES_DB: wabdb
     volumes:
       - /mnt/docker/plasmic/db_data:/var/lib/postgresql/data
       - ./platform/wab/tools/docker-dev/db-setup.bash:/docker-entrypoint-initdb.d/db-setup.sh # If you want to auto-run your script on first startup, this is required. I recommend this file simply be baked into the image to eliminate this repo as a requirement for building this stack.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U plasmic"]
+      test: ["CMD-SHELL", "pg_isready -U wab"]
       interval: 5s
       timeout: 10s
       retries: 5
 
-  plasmic-studio:
-    image: plasmicapp/plasmic-studio:latest # Use the official prebuilt image rather than building from source
-    restart: always
-    environment:
-      DATABASE_URL: postgres://plasmic:securepassword@db:5432/plasmicdb
-      PORT: 30210
+  # 2) Main WAB (web app backend) container - the Plasmic Studio "backend"
+  wab:
+    build:
+      context: .
+      dockerfile: ./platform/wab/Dockerfile
+    container_name: plasmic_wab
+    restart: unless-stopped
     ports:
-      - "30210:3000"
+      - "3003:3003"
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      # WAB_DBNAME: wabdb
+      # WAB_DBUSER: wab
+      # WAB_DBPASS: securepassword
+      # WAB_DBHOST: db
+      DATABASE_URL: postgres://wab:securepassword@db:5432/wabdb
+    volumes:
+     - ./platform/wab/tools/docker-dev/secrets.json:/home/normaluser/.plasmic/secrets.json
+
+  # 3) React renderer container (if your deployment expects SSR or a dedicated renderer)
+  react-renderer:
+    build:
+      context: .
+      dockerfile: ./platform/react-renderer/Dockerfile
+    container_name: plasmic_renderer
+    restart: unless-stopped
+    # If that Dockerfile exposes 3010, map it out
+    ports:
+      - "3010:3010"
+    depends_on:
+      wab:
+        condition: service_started
+    environment:
+      # WAB_ENDPOINT: http://wab:3004
+      RENDERER_PORT: 3010
