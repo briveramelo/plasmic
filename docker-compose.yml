@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: plasmic
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: plasmicdb
+    volumes:
+      - /mnt/docker/plasmic/db_data:/var/lib/postgresql/data
+      - ./platform/wab/tools/docker-dev/db-setup.bash:/docker-entrypoint-initdb.d/db-setup.sh # If you want to auto-run your script on first startup, this is required. I recommend this file simply be baked into the image to eliminate this repo as a requirement for building this stack.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plasmic"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  plasmic-studio:
+    image: plasmicapp/plasmic-studio:latest # Use the official prebuilt image rather than building from source
+    restart: always
+    environment:
+      DATABASE_URL: postgres://plasmic:securepassword@db:5432/plasmicdb
+      PORT: 30210
+    ports:
+      - "30210:3000"
+    depends_on:
+      db:
+        condition: service_healthy
